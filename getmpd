@@ -1,0 +1,310 @@
+#!/bin/bash
+#
+#  getmpd v0.1 - by ahoka
+#
+#  This script is made to be used with cygwin.
+#  Read the README file or run ./getmpd --help for information.
+#
+
+printHelp() {
+cat << EOF
+getmpd v0.1 - by ahoka
+
+List of required packages:
+    - Web/wget
+    - Admin/cygrunsrv
+    - Database/libsqlite3_0-devel
+    - Devel/autoconf2.5
+    - Devel/automake1.11
+    - Devel/cmake
+    - Devel/make
+    - Devel/pkg-config
+    - Devel/gcc4-core
+    - Devel/gcc4-g++
+    - Libs/libncureses10
+    - Libs/libncuresesw10
+    - Libs/libglib2.0-devel
+    - Libs/zlib-devel
+    - Libs/libiconv
+    - Audio/libao-Devel
+    - Audio/libao4
+
+Optional Packages:
+    - Libs/libcurl3 (For lyrics fetching in ncmpcpp)
+
+  Usage: ./getmpd [OPTIONS] [MUSIC DIR]
+ 
+  Options             Description
+    --enable-ffmpeg     Needed for TTA (True Audio) playback.
+    --without-ncmpcpp   If provided the script will not download and install
+                        ncmpcpp or its required libraries.
+EOF
+exit
+}
+
+download() {
+    wget --trust-server-name "$1"
+}
+
+ffmpeg=false
+ncmpcpp=true
+musicdir="~/Music"
+
+required=( tar wget cygrunsrv autoconf automake cmake gcc g++ make pkg-config )
+reqnlibs=( libiconv )
+requlibs=( sqlite3 zlib "glib-2.0" ao )
+
+downloads=(
+    "http://sourceforge.net/projects/mad/files/madplay/0.15.2b/madplay-0.15.2b.tar.gz/download"
+    "http://sourceforge.net/projects/mad/files/libid3tag/0.15.1b/libid3tag-0.15.1b.tar.gz/download"
+    "http://sourceforge.net/projects/mad/files/libmad/0.15.1b/libmad-0.15.1b.tar.gz/download"
+    "http://sourceforge.net/projects/libcue/files/libcue/1.4.0/libcue-1.4.0.tar.bz2/download"
+    "http://downloads.xiph.org/releases/vorbis/libvorbis-1.3.3.tar.gz"
+    "http://downloads.xiph.org/releases/ogg/libogg-1.3.0.tar.gz"
+    "http://downloads.xiph.org/releases/flac/flac-1.2.1.tar.gz"
+    "http://sourceforge.net/projects/musicpd/files/mpd/0.16.7/mpd-0.16.7.tar.bz2/download"
+    "http://sourceforge.net/projects/musicpd/files/libmpdclient/2.7/libmpdclient-2.7.tar.bz2/download"
+    "http://sourceforge.net/projects/musicpd/files/mpc/0.22/mpc-0.22.tar.bz2/download" 
+)
+
+ffmpegdl="http://ffmpeg.org/releases/ffmpeg-0.10.2.tar.gz"
+ncmpcppdl=(
+    "http://ftp.gnu.org/pub/gnu/ncurses/ncurses-5.9.tar.gz"
+    "http://developer.kde.org/~wheeler/files/src/taglib-1.7.1.tar.gz"
+    "http://unkart.ovh.org/ncmpcpp/ncmpcpp-0.5.9.tar.bz2"
+)
+
+for i in $*; do
+    case $i in
+    --help)
+        printHelp
+    ;;
+    --enable-ffmpeg)
+        ffmpeg=true
+        echo "ffmpeg enabled"
+    ;;
+    --without-ncmpcpp)
+        ncmpcpp=false
+        echo "ncmpcpp disabled"
+    ;;
+    *)
+        musicdir="$i"
+    ;;
+    esac
+done
+
+for req in "${required[@]}"; do
+    echo -n "checking for $req... "
+    if ! command -v "$req" > /dev/null; then
+        echo "no"
+        echo -e "This script requires $req to be installed.\n"
+        printHelp
+    else
+        if [ "$req" == "apt-cyg" ]; then aptcyg=true; fi
+        echo "yes"
+    fi
+done
+
+for req in "${requlibs[@]}"; do
+    echo -n "checking for $req... "
+    if ! pkg-config --exists "$req" > /dev/null; then
+        echo "no"
+        echo -e "This script requires the $req library to be installed.\n"
+        printHelp
+    else
+        echo "yes"
+    fi
+done
+
+for req in "${reqnlibs[@]}"; do
+    echo -n "checking for $req... "
+    if ! cygcheck -cd | grep "$req" > /dev/null; then
+        echo "no"
+        echo -e "This script requires the $req library to be installed.\n"
+        printHelp
+    else
+        echo "yes"
+    fi
+done
+
+mkdir -p "get-mpd"
+cd "get-mpd"
+
+for link in "${downloads[@]}"; do download "$link"; done
+if $ncmpcpp; then for link in "${ncmpcppdl[@]}"; do download "$link"; done fi
+if $ffmpeg; then download "$ffmpegdl"; fi
+
+for i in `ls -1 *.tar.gz`; do tar -xvzf $i && rm $i; done
+for i in `ls -1 *.tar.bz2`; do tar -xvjf $i && rm $i; done
+
+cd libid3*
+./configure --prefix=/usr
+make
+cat > id3tag.pc << "EOF"
+prefix=/usr
+exec_prefix=/usr
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: id3tag
+Description: ID3 tag reading library
+Version: 0.15.1b
+Cflags: -I${includedir}
+Libs: -L${libdir} -lid3tag
+Libs.private: -lz
+EOF
+make install
+install -v -m644 id3tag.pc /lib/pkgconfig
+cd ../libmad*
+sed -i '/-fforce-mem/d' configure
+./configure --prefix=/usr
+make && make install
+cd ../libcue*
+./configure --prefix=/usr
+make && make install
+cd ../madplay*
+./configure --prefix=/usr
+make && make install
+cd ../flac*
+./configure --prefix=/usr
+make && make install
+cd ../libogg*
+./configure --prefix=/usr
+make && make install
+cd ../libvorbis*
+./configure --prefix=/usr
+make && make install
+
+if $ffmpeg; then
+    cd ../ffmpeg*
+    # audio only configuration from: https://gist.github.com/1301208
+    ./configure \
+        --prefix=/usr \
+        --disable-debug \
+        --disable-avdevice \
+        --disable-avfilter \
+        --disable-swscale \
+        --enable-ffmpeg \
+        --disable-ffplay \
+        --disable-ffserver \
+        --disable-network \
+        --disable-muxers \
+        --disable-demuxers \
+        --enable-rdft \
+        --enable-demuxer=aac \
+        --enable-demuxer=ac3 \
+        --enable-demuxer=ape \
+        --enable-demuxer=asf \
+        --enable-demuxer=flac \
+        --enable-demuxer=matroska_audio \
+        --enable-demuxer=mp3 \
+        --enable-demuxer=mpc \
+        --enable-demuxer=mov \
+        --enable-demuxer=mpc8 \
+        --enable-demuxer=ogg \
+        --enable-demuxer=tta \
+        --enable-demuxer=wav \
+        --enable-demuxer=wv \
+        --disable-bsfs \
+        --disable-filters \
+        --disable-parsers \
+        --enable-parser=aac \
+        --enable-parser=ac3 \
+        --enable-parser=mpegaudio \
+        --disable-protocols \
+        --enable-protocol=file \
+        --disable-indevs \
+        --disable-outdevs \
+        --disable-encoders \
+        --disable-decoders \
+        --enable-decoder=aac \
+        --enable-decoder=ac3 \
+        --enable-decoder=alac \
+        --enable-decoder=ape \
+        --enable-decoder=flac \
+        --enable-decoder=mp1 \
+        --enable-decoder=mp2 \
+        --enable-decoder=mp3 \
+        --enable-decoder=mpc7 \
+        --enable-decoder=mpc8 \
+        --enable-decoder=tta \
+        --enable-decoder=vorbis \
+        --enable-decoder=wavpack \
+        --enable-decoder=wmav1 \
+        --enable-decoder=wmav2 \
+        --enable-decoder=pcm_alaw \
+        --enable-decoder=pcm_dvd \
+        --enable-decoder=pcm_f32be \
+        --enable-decoder=pcm_f32le \
+        --enable-decoder=pcm_f64be \
+        --enable-decoder=pcm_f64le \
+        --enable-decoder=pcm_s16be \
+        --enable-decoder=pcm_s16le \
+        --enable-decoder=pcm_s16le_planar \
+        --enable-decoder=pcm_s24be \
+        --enable-decoder=pcm_daud \
+        --enable-decoder=pcm_s24le \
+        --enable-decoder=pcm_s32be \
+        --enable-decoder=pcm_s32le \
+        --enable-decoder=pcm_s8 \
+        --enable-decoder=pcm_u16be \
+        --enable-decoder=pcm_u16le \
+        --enable-decoder=pcm_u24be \
+        --enable-decoder=pcm_u24le \
+        --enable-decoder=rawvideo
+    make && make install
+fi
+
+cd ../mpd*
+sed -i 's/windows\*)/windows* | cygwin*)/' configure
+./configure
+make && make install
+cd ../libmpdclient*
+./configure --prefix=/usr
+make && make install
+cd ../mpc*
+./configure
+make && make install
+
+if $ncmpcpp; then
+    cd ../taglib*
+    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+    make && make install
+    cd ../ncurses*
+    ./configure --prefix=/usr --enable-pc-files --without-manpages
+    make && make install
+    ./configure --prefix=/usr --enable-pc-files --without-manpages --enable-widec
+    make && make install
+    cd ../ncmpcpp*
+    ./configure --enable-clock
+    if ! pkg-config --exists "libcurl" > /dev/null; then
+        sed -i src/lyrics.cpp -e 's|itsFolder|Config.ncmpcpp_directory + "artists"|g' || die
+    fi
+    make && make install
+fi
+
+cat > ~/.mpdconf << EOF
+music_directory		"$musicdir"
+playlist_directory	"~/.mpd/playlists"
+db_file			    "~/.mpd/database"
+log_file			"~/.mpd/log"
+pid_file			"~/.mpd/pid"
+state_file			"~/.mpd/state"
+
+port			    "6600"
+metadata_to_use	    "artist,album,title,track,name,genre,date,composer,performer,disc"
+mixer_type          "software"
+
+audio_output {
+	type		    "winmm"
+	name		    "WINBLOWS"
+    format          "48000:16:2"
+}
+EOF
+mkdir -p ~/.mpd/playlists
+
+$(cmd /c SET CYGWIN=server)
+cygrunsrv -I "mpd service" -p /usr/local/bin/mpd -e "CYGWIN=server" 
+
+echo -e "\nMPD has been successfully installed!\nNow install gentoo.\n"
+

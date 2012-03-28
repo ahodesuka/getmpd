@@ -1,0 +1,30 @@
+getmpd v0.1 - by ahoka
+
+List of required packages:
+    - Web/wget
+    - Admin/cygrunsrv
+    - Database/libsqlite3_0-devel
+    - Devel/autoconf2.5
+    - Devel/automake1.11
+    - Devel/cmake
+    - Devel/make
+    - Devel/pkg-config
+    - Devel/gcc4-core
+    - Devel/gcc4-g++
+    - Libs/libncureses10
+    - Libs/libncuresesw10
+    - Libs/libglib2.0-devel
+    - Libs/zlib-devel
+    - Libs/libiconv
+    - Audio/libao-Devel
+    - Audio/libao4
+
+Optional Packages:
+    - Libs/libcurl3 (For lyrics fetching in ncmpcpp)
+
+  Usage: ./getmpd [OPTIONS] [MUSIC DIR]
+ 
+  Options             Description
+    --enable-ffmpeg     Needed for TTA (True Audio) playback.
+    --without-ncmpcpp   If provided the script will not download and install
+                        ncmpcpp or its required libraries.
